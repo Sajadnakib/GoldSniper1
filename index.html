@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gold Sniper — النسخة الاحترافية (Beta)</title>
+<meta name="theme-color" content="#0b1020">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+:root{
+  --bg:#050816; --card:#0e1428; --surface:#121a34; --line:#1f2a44;
+  --ink:#e5e7eb; --muted:#9aa6bb; --buy:#10b981; --sell:#ef4444; --accent:#38bdf8;
+}
+*{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#050816 0%,#0b1020 100%);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif}
+.header{position:sticky;top:0;background:#050816d9;backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:50}
+.wrap{max-width:1100px;margin:0 auto;padding:12px 16px}
+.h1{display:flex;align-items:center;gap:10px;margin:0;font-size:20px;font-weight:800}
+.badge{background:#132044;border:1px solid #223056;padding:4px 10px;border-radius:999px;font-size:12px;color:#cfe6ff}
+.grid{display:grid;gap:14px;padding:16px}
+@media(min-width:860px){.grid{grid-template-columns:2fr 1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 34px rgba(0,0,0,.28);padding:14px}
+.card h2{margin:0 0 8px 0;font-size:16px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:8px}
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{border:1px solid var(--line);background:#0c132a;color:#cbd5e1;padding:6px 10px;border-radius:999px;font-weight:600}
+.btn{background:#0f766e;border:0;color:#eafff7;padding:10px 14px;border-radius:10px;font-weight:700;cursor:pointer}
+.btn.secondary{background:#2c354d}
+#signal{font-weight:900}
+canvas{width:100%;height:360px;background:#0b1020;border-radius:12px;border:1px solid var(--line)}
+.list{line-height:1.8;margin:8px 0 0 0}
+.small{color:var(--muted);font-size:12px}
+.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px}
+.kpi .box{background:#0b1020;border:1px solid var(--line);padding:10px;border-radius:12px;text-align:center}
+.kpi .box b{display:block;font-size:18px;margin-top:4px}
+.ok{color:#10b981}.err{color:#ef4444}.warn{color:#f59e0b}
+footer{color:#94a3b8;text-align:center;padding:16px}
+select{background:#0b1020;border:1px solid var(--line);color:#e5e7eb;padding:6px 10px;border-radius:8px}
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="wrap">
+      <h1 class="h1">Gold Sniper <span class="badge">Web Pro • Beta</span></h1>
+    </div>
+  </div>
+
+  <main class="wrap">
+    <div class="grid">
+      <section class="card">
+        <div class="toolbar">
+          <div>
+            <h2>XAUUSD (ذهب) — <span id="tfLabel">5m</span></h2>
+            <div class="small" id="status">تحميل البيانات…</div>
+          </div>
+          <div class="pills">
+            <select id="tf">
+              <option value="5">5m</option>
+              <option value="15">15m</option>
+              <option value="60">1h</option>
+            </select>
+            <span class="pill">VWAP</span>
+            <span class="pill">Order Blocks</span>
+            <span class="pill">FVG</span>
+            <span class="pill">Liquidity</span>
+            <span id="signal" class="pill">—</span>
+          </div>
+        </div>
+        <canvas id="chart"></canvas>
+      </section>
+
+      <aside class="card">
+        <h2>لوحة الإشارة</h2>
+        <div class="kpi">
+          <div class="box"><span class="small">Heat</span><b id="heat">—</b></div>
+          <div class="box"><span class="small">Trend</span><b id="trend">—</b></div>
+          <div class="box"><span class="small">VWAP Bias</span><b id="bias">—</b></div>
+        </div>
+        <ul id="notes" class="list"></ul>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn" id="refresh">تحديث</button>
+          <button class="btn secondary" id="install">أضف للشاشة</button>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <footer>
+    <small>Gold Sniper • هذا نموذج أولي — الإشارات تحليلية وليست توصية شراء/بيع.</small>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+  <script>
+  async function loadCSV(symbol, interval){
+    // مصدر سريع بدون مفتاح: stooq  (قد يكون تأخير؛ يوجد مولّد احتياطي)
+    const url = `https://stooq.com/q/d/l/?s=${symbol}&i=${interval}`;
+    try{
+      const res = await fetch(url,{cache:"no-store"});
+      if(!res.ok) throw new Error("net");
+      const csv = await res.text();
+      const rows = csv.trim().split(/\n+/).slice(-200);
+      const out=[];
+      for(let i=1;i<rows.length;i++){
+        const [date,time,open,high,low,close,volume] = rows[i].split(",");
+        if(!open) continue;
+        out.push({t:new Date(date+'T'+(time||'00:00')+':00Z'), o:+open, h:+high, l:+low, c:+close, v:+(volume||0)});
+      }
+      if(out.length<60) throw new Error("short");
+      return out;
+    }catch(e){
+      // مولّد احتياطي للعرض
+      const out=[]; let price=2400;
+      for(let i=0;i<200;i++){
+        const drift = (Math.sin(i/20))*2;
+        const o=price, c=price+drift+(Math.random()-0.5)*3;
+        const h=Math.max(o,c)+Math.random()*1.8, l=Math.min(o,c)-Math.random()*1.8, v=100+Math.random()*60;
+        out.push({t:new Date(Date.now()-(200-i)*interval*60000), o,h,l,c,v});
+        price=c;
+      }
+      return out;
+    }
+  }
+
+  function vwap(b){let pv=0,v=0,a=[];for(const x of b){const tp=(x.h+x.l+x.c)/3, vv=(x.v||1); pv+=tp*vv; v+=vv; a.push(pv/v)} return a}
+  function fvg(b){const up=[],down=[];for(let i=2;i<b.length;i++){const a=b[i-2],c=b[i]; if(a.h < c.l) up.push({i:i-1,top:c.l,bot:a.h}); if(a.l > c.h) down.push({i:i-1,top:a.l,bot:c.h}); } return {up,down}}
+  function ob(b,look=20,th=.6){const bull=[],bear=[];for(let i=3;i<b.length;i++){const w=b.slice(Math.max(0,i-look),i); const r=Math.max(...w.map(z=>z.h))-Math.min(...w.map(z=>z.l))||1; const body=Math.abs(b[i].c-b[i].o); if(body>th*r){ if(b[i].c>b[i].o) bull.push({i, p:Math.min(b[i].o,b[i].c)}); else bear.push({i, p:Math.max(b[i].o,b[i].c)}); }} return {bull,bear}}
+  function sweep(b,look=10){const buys=[],sells=[];for(let i=look;i<b.length;i++){const w=b.slice(i-look,i); const H=Math.max(...w.map(z=>z.h)), L=Math.min(...w.map(z=>z.l)); const up=b[i].h>H && b[i].c<H; const dn=b[i].l<L && b[i].c>L; if(dn) buys.push({i,level:L}); if(up) sells.push({i,level:H});} return {buys,sells}}
+  function decide(b,vw,fg,obx,sw){
+    const n=b.length-1, price=b[n].c, vi=vw[n]; let s=0, notes=[];
+    if(price>vi){s+=1; notes.push("السعر فوق VWAP (+)") } else { s-=1; notes.push("السعر تحت VWAP (-)") }
+    const u=fg.up.filter(z=>z.i>n-12).length, d=fg.down.filter(z=>z.i>n-12).length;
+    if(u>d){ s+=1; notes.push("FVG صاعد") } else if(d>u){ s-=1; notes.push("FVG هابط") }
+    const nearB=obx.bull.some(z=>Math.abs(n-z.i)<=6), nearS=obx.bear.some(z=>Math.abs(n-z.i)<=6);
+    if(nearB){ s+=1; notes.push("قرب OB شرائي") } if(nearS){ s-=1; notes.push("قرب OB بيعي") }
+    const sb=sw.buys.some(z=>Math.abs(n-z.i)<=4), ss=sw.sells.some(z=>Math.abs(n-z.i)<=4);
+    if(sb){ s+=1; notes.push("سيولة ملتقطة للأسفل (Buy)") } if(ss){ s-=1; notes.push("سيولة ملتقطة للأعلى (Sell)") }
+    let sig="حياد", cls="warn", heat="Neutral", trend = (price>vi?"Bullish":"Bearish"), bias=(price>vi?"Long":"Short");
+    if(s>=2){ sig="شراء قوي"; cls="ok"; heat="Strong" }
+    else if(s<=-2){ sig="بيع قوي"; cls="err"; heat="Strong" }
+    else if(s>0){ sig="شراء"; cls="ok"; heat="Moderate" }
+    else if(s<0){ sig="بيع"; cls="err"; heat="Moderate" }
+    return {sig,cls,heat,trend,bias,notes}
+  }
+
+  let chart;
+  async function render(interval=5){
+    document.getElementById('status').textContent='تحميل…';
+    const bars = await loadCSV('xauusd', interval);
+    document.getElementById('status').textContent = 'آخر تحديث: '+ new Date().toLocaleTimeString();
+
+    const vw = vwap(bars), fg=fvg(bars), obx=ob(bars), sw=sweep(bars);
+    const out = decide(bars, vw, fg, obx, sw);
+
+    // UI
+    const sig=document.getElementById('signal'); sig.textContent=out.sig;
+    sig.classList.remove('ok','err','warn'); sig.classList.add(out.cls);
+    document.getElementById('heat').textContent=out.heat;
+    document.getElementById('trend').textContent=out.trend;
+    document.getElementById('bias').textContent=out.bias;
+    const notes=document.getElementById('notes'); notes.innerHTML=''; out.notes.forEach(n=>{const li=document.createElement('li'); li.textContent=n; notes.appendChild(li);});
+
+    // رسم الشموع + VWAP
+    const labels = bars.map(b=>b.t);
+    const candles = bars.map(b=>({x:b.t, o:b.o, h:b.h, l:b.l, c:b.c}));
+
+    const ctx = document.getElementById('chart').getContext('2d');
+    if(chart) chart.destroy();
+    chart = new Chart(ctx, {
+      data:{
+        labels,
+        datasets:[
+          {type:'candlestick', label:'XAUUSD', data:candles},
+          {type:'line', label:'VWAP', data:vw, yAxisID:'y', borderWidth:2, pointRadius:0, tension:.25}
+        ]
+      },
+      options:{
+        parsing:false,
+        plugins:{legend:{labels:{color:'#e5e7eb'}}},
+        scales:{
+          x:{ticks:{color:'#94a3b8'}, grid:{color:'#1f2a44'}},
+          y:{ticks:{color:'#94a3b8'}, grid:{color:'#1f2a44'}}
+        }
+      }
+    });
+  }
+
+  document.getElementById('refresh').addEventListener('click',()=>render(Number(document.getElementById('tf').value)));
+  document.getElementById('tf').addEventListener('change', (e)=>{
+    document.getElementById('tfLabel').textContent = e.target.value + (e.target.value==='60'?'m':'m');
+    render(Number(e.target.value));
+  });
+
+  // PWA installer
+  let deferred=null; window.addEventListener('beforeinstallprompt', e=>{e.preventDefault(); deferred=e;});
+  document.getElementById('install').addEventListener('click', async()=>{
+    if(deferred){ deferred.prompt(); deferred=null; } else alert("من قائمة المتصفح → Add to Home screen");
+  });
+
+  render(5);
+  </script>
+</body>
+</html>
